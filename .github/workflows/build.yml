@@ -1,10 +1,26 @@
 name: Build ANGLE
 
 on:
+  pull_request:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Platforms to build
+        type: choice
+        default: all
+        options:
+          - all
+          - macos-arm64
+          - macos-x64
+          - windows-x64
+          - linux-x64
+      publish:
+        description: Publish a release (requires all platforms)
+        type: boolean
+        default: false
 
 permissions:
-  contents: write
+  contents: read
 
 defaults:
   run:
@@ -13,19 +29,28 @@ defaults:
 jobs:
   build:
     name: ${{ matrix.platform }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.platform == 'windows-x64' && 'windows-2025' || matrix.platform == 'linux-x64' && 'ubuntu-22.04' || 'macos-15' }}
     timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { platform: macos-arm64, os: macos-15 }
-          - { platform: windows-x64, os: windows-2025 }
+        platform: >-
+          ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.platform == 'all')
+              && '["macos-arm64", "macos-x64", "windows-x64", "linux-x64"]'
+              || format('["{0}"]', inputs.platform)) }}
     steps:
       - uses: actions/checkout@v7
 
       - name: Stage and build
-        run: platforms/${{ matrix.platform }}/external.sh
+        run: bash platforms/build.sh "${{ matrix.platform }}"
+
+      - name: Preserve failed build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: diagnostics-${{ matrix.platform }}
+          path: dist/${{ matrix.platform }}/
+          if-no-files-found: ignore
 
       - name: Package
         run: |
@@ -42,6 +67,9 @@ jobs:
           if-no-files-found: error
 
   release:
+    permissions:
+      contents: write
+    if: github.event_name == 'workflow_dispatch' && inputs.platform == 'all' && inputs.publish
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -56,9 +84,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           source ./platforms/config.sh
-          TAG="v$(date -u +%Y%m%d)-${ANGLE_SHA:0:12}"
+          TAG="electron-v${ELECTRON_VERSION}-$(date -u +%Y%m%d)-${GITHUB_SHA:0:7}"
           gh release create "$TAG" \
             --repo "${{ github.repository }}" \
             --title "$TAG" \
-            --notes "ANGLE libEGL/libGLESv2 built from https://chromium.googlesource.com/angle/angle at commit ${ANGLE_SHA}" \
+            --notes "ANGLE for Electron ${ELECTRON_VERSION}: Chromium ${CHROMIUM_VERSION}, ANGLE ${ANGLE_SHA}, with Electron ANGLE patches" \
             angle-*.zip angle-*.tar.gz

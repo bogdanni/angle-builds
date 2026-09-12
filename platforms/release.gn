@@ -1,0 +1,18 @@
+# Electron's production build mode supplies ThinLTO, release optimization,
+# disabled development backends and macOS stripping through upstream defaults.
+is_official_build = true
+is_component_build = false
+
+# Standalone shared libraries, without Electron's workload-specific PGO.
+angle_use_static_angle = false
+chrome_pgo_phase = 0
+
+# Relevant settings from Electron's build/args/all.gn.
+use_clang_modules = false
+is_cfi = false
+angle_enable_vulkan_validation_layers = false
+
+# These standalone-only features are absent from Chromium-embedded ANGLE.
+angle_has_astc_encoder = false
+angle_enable_d3d11_compositor_native_window = false
+angle_has_frame_capture = false

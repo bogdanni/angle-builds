@@ -1,62 +1,91 @@
 # angle-builds
 
-Prebuilt [ANGLE](https://chromium.googlesource.com/angle/angle) libraries for
-macOS (arm64) and Windows (x64), built from pinned upstream commits with
-GitHub Actions.
+Build ANGLE's EGL and OpenGL ES shared libraries for macOS ARM64, macOS x64,
+Windows x64, and Linux x64 on GitHub Actions. Each build uses the ANGLE source
+revision and patches selected by an Electron release.
 
-Starting with Chromium 151, official Chromium builds link ANGLE statically and
-ship only stub `libEGL`/`libGLESv2` libraries with empty export tables, so
-CEF and other Chromium distributions are no longer a usable source of these
-libraries. This repository builds them directly from ANGLE source.
+The output is a set of standalone libraries for applications that load ANGLE
+directly. It does not include Electron.
 
-## Building
+## Run a build
 
-The ANGLE commit is pinned as `ANGLE_SHA` in `platforms/config.sh`.
-`platforms/<platform>/external.sh` fetches depot_tools and the pinned ANGLE
-source, builds `libEGL`/`libGLESv2`, and stages them with the ANGLE license
-into `dist/<platform>/`.
+Open **Actions → Build ANGLE → Run workflow** and select the branch to build.
+Under **Platforms to build**, choose **all** or one of the four targets.
 
-Pin commits from an ANGLE release branch (`chromium/NNNN`) rather than `main`:
-upstream `main` may require a Windows SDK that is not yet installable.
+Leave **publish** unchecked to build and download artifacts without creating a
+release. Once a job succeeds, its archive is available in the run's **Artifacts**
+section. To publish a GitHub release, select **all** and check **publish**.
+The release is created only after all four jobs succeed.
 
-<details open>
-<summary>windows-x64</summary>
+Pull requests run all four builds without publishing. Pushing a branch alone
+does not start a build.
 
-Requires Visual Studio 2022 or newer with the Desktop development with C++
-workload, a Windows 10/11 SDK, Python 3, and Git for Windows. Build from Git
-Bash:
+## Update the Electron version
 
-```shell
-git clone git@github.com:jsm174/angle-builds.git
-cd angle-builds
-platforms/windows-x64/external.sh
+From the repository root, run:
+
+```sh
+python3 platforms/pin-electron.py 44.3.0
 ```
-</details>
 
-<details>
-<summary>macos-arm64</summary>
+This updates the source pins in `platforms/config.sh` and the vendored Electron
+patches. It follows Electron's Chromium dependency to find the ANGLE revision,
+then reads ANGLE's dependency file to select depot_tools. It also downloads
+Electron's Apple ThinLTO compiler workaround.
 
-Requires Xcode 16 or newer and Python 3.
+Review the changed pins and patches before committing and pushing. The script
+selects sources, but does not build them or check whether a new Electron release
+requires changes to the recipe. See [Build configuration](docs/electron-build.md)
+for the settings and patches to review. Then run the workflow as described above.
 
-```shell
-git clone git@github.com:jsm174/angle-builds.git
-cd angle-builds
-platforms/macos-arm64/external.sh
+## Downloaded files
+
+| Target | Archive |
+|---|---|
+| macOS ARM64 | `angle-macos-arm64.tar.gz` |
+| macOS x64 | `angle-macos-x64.tar.gz` |
+| Windows x64 | `angle-windows-x64.zip` |
+| Linux x64 | `angle-linux-x64.tar.gz` |
+
+Each archive contains `libEGL` and `libGLESv2` with the platform's native
+extension, plus `ANGLE-LICENSE.txt`. Windows also includes `d3dcompiler_47.dll`
+when the build produces it.
+
+The accompanying files record how the libraries were built:
+
+- `build-config.sh` and the patch directories identify the selected sources.
+- `build-info.txt` records source revisions, compiler details, and the runner
+  image version.
+- `args.gn`, `effective-args.json`, and the compiler/linker flag files record
+  the requested and resolved build settings.
+- `preflight.txt` and `binary-report.txt` contain configuration and binary checks.
+- `SHA256SUMS` contains checksums for the packaged files.
+
+## Build environment and checks
+
+All targets use `platforms/build.sh PLATFORM` on a fresh hosted runner. The recipe
+pins Xcode, the Windows SDK, and depot_tools. ANGLE's dependency pins select the
+Chromium build tools, Clang, and Linux sysroot. Hosted runner images and the
+Windows Visual Studio toolset can still change.
+
+Before compilation, the recipe checks the resolved release settings,
+optimizations, and selected backends. After linking, it checks architectures,
+required EGL/GLES exports, and shared-library dependencies. Unexpected settings
+or dependencies fail the job. Diagnostics written before a failure are uploaded
+as a separate artifact.
+
+The macOS deployment target and Linux sysroot follow upstream ANGLE defaults.
+The binary report records the resulting macOS and glibc requirements. The checks
+do not impose an additional minimum-OS policy or run graphics tests. Test the
+libraries in the consuming application on its supported systems.
+
+Run the recipe's Python tests without compiling ANGLE:
+
+```sh
+python3 -m unittest discover -s platforms -p 'test_*.py'
 ```
-</details>
-
-## Releases
-
-To cut a release, bump `ANGLE_SHA` in `platforms/config.sh` and run the
-`Build ANGLE` workflow from the Actions tab. Each release is tagged
-`vYYYYMMDD-<commit>` and contains:
-
-- `angle-macos-arm64.tar.gz` — `libEGL.dylib`, `libGLESv2.dylib`, `ANGLE-LICENSE.txt`
-- `angle-windows-x64.zip` — `libEGL.dll`, `libGLESv2.dll`, `ANGLE-LICENSE.txt`
-  (plus `d3dcompiler_47.dll` when produced by the build)
 
 ## License
 
-The workflow and scripts in this repository are MIT licensed. ANGLE itself is
-BSD-3-Clause; its license is included in every artifact as
-`ANGLE-LICENSE.txt`.
+The workflow and scripts are MIT licensed. ANGLE's license is included in every
+archive as `ANGLE-LICENSE.txt`.

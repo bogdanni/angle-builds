@@ -1,0 +1,26 @@
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -1457,6 +1457,12 @@
+       ":gl_prototypes",
+     ]
+ 
++    # Optimize standalone shared libraries at the final ThinLTO link.
++    if (is_official_build) {
++      suppressed_configs += [ "//build/config/compiler:thinlto_optimize_default" ]
++      configs += [ "//build/config/compiler:thinlto_optimize_max" ]
++    }
++
+     if (angle_enable_cl) {
+       sources += libglesv2_cl_sources
+     }
+@@ -1573,6 +1579,10 @@
+       ":debug_annotations_config",
+       ":library_name_config",
+     ]
++    if (is_official_build && invoker.target_type == "angle_shared_library") {
++      suppressed_configs += [ "//build/config/compiler:thinlto_optimize_default" ]
++      configs += [ "//build/config/compiler:thinlto_optimize_max" ]
++    }
+     deps += [ ":includes" ]
+   }
+ }
